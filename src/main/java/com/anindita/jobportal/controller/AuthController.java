@@ -1,12 +1,19 @@
 package com.anindita.jobportal.controller;
 
 import java.util.Collections;
+import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.anindita.jobportal.dto.LoginRequest;
 import com.anindita.jobportal.dto.RegisterRequest;
@@ -20,66 +27,99 @@ import com.anindita.jobportal.security.JwtUtil;
 @RequestMapping("/auth")
 public class AuthController {
 
-    @Autowired
-    private UserRepository userRepo;
+    private final UserRepository userRepo;
+    private final RoleRepository roleRepo;
+    private final JwtUtil jwtUtil;
+    private final PasswordEncoder passwordEncoder;
 
-    @Autowired
-    private RoleRepository roleRepo;
-
-    @Autowired
-    private JwtUtil jwtUtil;
-
-    private BCryptPasswordEncoder encoder =
-            new BCryptPasswordEncoder();
+    public AuthController(
+            UserRepository userRepo,
+            RoleRepository roleRepo,
+            JwtUtil jwtUtil,
+            PasswordEncoder passwordEncoder) {
+        this.userRepo = userRepo;
+        this.roleRepo = roleRepo;
+        this.jwtUtil = jwtUtil;
+        this.passwordEncoder = passwordEncoder;
+    }
 
     @PostMapping("/register")
-    public String register(
-            @RequestBody RegisterRequest request) {
+    public Map<String, String> register(
+            @Valid @RequestBody RegisterRequest request) {
+
+        String email = normalizeEmail(request.getEmail());
+        if (userRepo.existsByEmail(email)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "An account with this email already exists.");
+        }
+
+        String requestedRole = request.getRole() == null
+                ? "CANDIDATE"
+                : request.getRole();
+        if (!requestedRole.equals("CANDIDATE")
+                && !requestedRole.equals("EMPLOYER")) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Choose a candidate or employer account.");
+        }
+
+        Role role = roleRepo.findByName(requestedRole)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "The selected account role is not configured."));
 
         User user = new User();
-
-        user.setFullName(request.getFullName());
-
-        user.setEmail(request.getEmail());
-
-        user.setPassword(
-                encoder.encode(request.getPassword())
-        );
-
-        Role candidateRole = roleRepo
-                .findByName("CANDIDATE")
-                .orElseThrow();
-
-        user.setRoles(
-                Collections.singleton(candidateRole)
-        );
-
+        user.setFullName(request.getFullName().trim());
+        user.setEmail(email);
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setRoles(Collections.singleton(role));
         userRepo.save(user);
 
-        return "User Registered Successfully";
+        return Map.of("message", "Account created successfully.");
     }
 
     @PostMapping("/login")
     public Map<String, String> login(
-            @RequestBody LoginRequest request) {
+            @Valid @RequestBody LoginRequest request) {
 
-        User user = userRepo.findByEmail(
-                request.getEmail()
-        ).orElseThrow();
+        String email = normalizeEmail(request.getEmail());
+        User user = userRepo.findByEmail(email)
+                .orElseThrow(AuthController::invalidCredentials);
 
-        if (encoder.matches(
-                request.getPassword(),
-                user.getPassword()
-        )) {
-
-            String token =
-                    jwtUtil.generateToken(user.getEmail());
-
-            return Map.of("token", token);
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw invalidCredentials();
         }
 
-        throw new RuntimeException(
-                "Invalid Credentials"
-        );
+        return Map.of("token", jwtUtil.generateToken(user.getEmail()));
+    }
+
+    @GetMapping("/me")
+    public Map<String, Object> getCurrentUser(Authentication authentication) {
+        User user = userRepo.findByEmail(authentication.getName())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "The authenticated account no longer exists."));
+
+        String role = user.getRoles().stream()
+                .map(Role::getName)
+                .findFirst()
+                .orElse("CANDIDATE");
+
+        return Map.of(
+                "id", user.getId(),
+                "name", user.getFullName(),
+                "email", user.getEmail(),
+                "role", role);
+    }
+
+    private static String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static ResponseStatusException invalidCredentials() {
+        return new ResponseStatusException(
+                HttpStatus.UNAUTHORIZED,
+                "Email or password is incorrect.");
     }
 }

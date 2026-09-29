@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 @Table(name="users")
@@ -24,8 +25,10 @@ public class User {
 	@Column(nullable=false,unique=true,length=100)
 	private String email;
 	@Column(nullable=false)
+	@JsonIgnore
 	private String password;
 	 @ManyToMany(fetch=FetchType.EAGER)
+	 @JsonIgnore
 	 @JoinTable(
 			 name="users_roles",
 			 joinColumns=@JoinColumn(name="user_id"),
@@ -76,7 +79,7 @@ public class User {
 	 }
 	 @Override
 	 public String toString() {
-		return "User [id=" + id + ", fullName=" + fullName + ", email=" + email + ", password=" + password + ", roles="
+		return "User [id=" + id + ", fullName=" + fullName + ", email=" + email + ", roles="
 				+ roles + "]";
 	 }
 	 

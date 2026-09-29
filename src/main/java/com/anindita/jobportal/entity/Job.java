@@ -1,6 +1,10 @@
 package com.anindita.jobportal.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 public class Job {
@@ -10,15 +14,29 @@ public class Job {
             GenerationType.IDENTITY)
     private Long id;
 
+    @NotBlank
+    @Size(max = 150)
     private String title;
 
+    @NotBlank
+    @Size(max = 150)
     private String company;
 
+    @NotBlank
+    @Size(max = 150)
     private String location;
 
+    @DecimalMin("0.0")
     private double salary;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "recruiter_id")
+    @JsonIgnore
+    private User recruiter;
+
+    @NotBlank
     @Column(length = 2000)
+    @Size(max = 2000)
     private String description;
 
     public Job() {
@@ -70,5 +88,12 @@ public class Job {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+    public User getRecruiter() {
+        return recruiter;
+    }
+
+    public void setRecruiter(User recruiter) {
+        this.recruiter = recruiter;
     }
 }
